@@ -1,16 +1,15 @@
 import flet as ft
-import json
 import random
 import os
 import asyncio
 from datetime import date, timedelta
 
 async def main(page: ft.Page):
+    # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
     page.padding = 20
     
-    # Handle window sizing safely across Flet versions
     try:
         page.window.width = 500
         page.window.height = 950
@@ -21,8 +20,8 @@ async def main(page: ft.Page):
     page.horizontal_alignment = "center"
     page.scroll = "adaptive"
 
-    # --- Data Operations ---
-# --- データ操作系（Web公開・ローカルストレージ対応版） ---
+    # --- データ操作系（Webローカルストレージ対応版） ---
+    # ※サーバーがスリープしてもスマホの中にデータが残ります
     def load_json(filename, default):
         if page.client_storage.contains_key(filename):
             return page.client_storage.get(filename)
@@ -31,13 +30,12 @@ async def main(page: ft.Page):
     def save_json(filename, data):
         page.client_storage.set(filename, data)
 
-    # --- UI Components ---
+    # --- UIパーツ ---
     today_count_text = ft.Text("", size=20, weight="bold", color="green200")
     timer_text = ft.Text("00:00", size=70, weight="w900", color="amber400")
     rarity_badge = ft.Text("", size=20, weight="bold")
     result_display = ft.Text("集中を始めよう", size=18, italic=True, color="grey400")
     
-    # Time Selector Dropdown
     time_selector = ft.Dropdown(
         value="25",
         width=150,
@@ -56,7 +54,7 @@ async def main(page: ft.Page):
     reward_list_view = ft.Column()
 
     def update_ui():
-        # 1. Update Reward List (with stable TextButton for deletion)
+        # 1. 報酬リストの更新
         reward_list_view.controls.clear()
         rewards = load_json('rewards.json', [{"name": "チョコを1個食べる", "rarity": "Normal", "weight": 60}])
         
@@ -76,7 +74,6 @@ async def main(page: ft.Page):
                         page.update()
                 return delete_item
 
-            # Stable implementation: TextButton instead of IconButton
             row = ft.Row(
                 controls=[
                     ft.Text(f"• {r['name']} [{r['rarity']}]", size=14, color=dot_color, expand=True),
@@ -86,7 +83,7 @@ async def main(page: ft.Page):
             )
             reward_list_view.controls.append(row)
         
-        # 2. Update Logs and History Table
+        # 2. ログと履歴表の更新
         logs = load_json('logs.json', {})
         today = str(date.today())
         today_count_text.value = f"今日の達成: {logs.get(today, 0)} 回"
@@ -99,12 +96,11 @@ async def main(page: ft.Page):
             )
         page.update()
 
-    # --- Action Buttons ---
+    # --- ボタン類 ---
     gacha_button = ft.ElevatedButton("ご褒美を受け取る！", icon="CARD_GIFT_CARD", disabled=True, width=250, height=50)
     start_button = ft.ElevatedButton("集中を開始", icon="PLAY_ARROW", width=150)
     cancel_button = ft.ElevatedButton("中断", icon="STOP", width=100, disabled=True, color="red400")
 
-    # Timer State
     is_timer_running = [False]
 
     async def start_timer(e):
@@ -166,7 +162,6 @@ async def main(page: ft.Page):
 
     gacha_button.on_click = draw_gacha
 
-    # Reward Entry Area
     new_reward_input = ft.TextField(label="ご褒美の内容", expand=True)
     rarity_dropdown = ft.Dropdown(width=110, value="Normal", options=[ft.dropdown.Option("Normal"), ft.dropdown.Option("Rare"), ft.dropdown.Option("Legend")])
 
@@ -181,10 +176,9 @@ async def main(page: ft.Page):
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
-    # Initial Render
     update_ui()
 
-    # --- Main Layout Assembly ---
+    # --- レイアウト ---
     page.add(
         ft.Column(
             [
