@@ -1,4 +1,5 @@
 import flet as ft
+import json
 import random
 import os
 import asyncio
@@ -26,7 +27,7 @@ async def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
 
-    # 安全に画面を更新するヘルパー（最新版でupdateが不要になったことへの対策）
+    # 安全に画面を更新するヘルパー
     def safe_update():
         if hasattr(page, "update"):
             try:
@@ -34,9 +35,8 @@ async def main(page: ft.Page):
             except Exception:
                 pass
 
-    # --- データ操作系（最新Flet完全対応・自動判定版） ---
+    # --- データ操作系（最新Flet対応 ＆ 文字列変換バグ修正版） ---
     async def load_json(filename, default):
-        # バージョンに合わせて正しいストレージ機能を自動選択
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None:
             return default
@@ -49,6 +49,12 @@ async def main(page: ft.Page):
             val = storage.get(filename)
             if inspect.isawaitable(val):
                 val = await val
+            # 保存されている文字列を、Pythonで使えるデータ（辞書やリスト）に戻す
+            if isinstance(val, str):
+                try:
+                    return json.loads(val)
+                except:
+                    pass
             return val
         return default
 
@@ -57,7 +63,9 @@ async def main(page: ft.Page):
         if storage is None:
             return
 
-        res = storage.set(filename, data)
+        # Pythonのデータ（辞書やリスト）を、一度「ただの文字列」に変換してから保存する
+        json_str = json.dumps(data, ensure_ascii=False)
+        res = storage.set(filename, json_str)
         if inspect.isawaitable(res):
             await res
 
