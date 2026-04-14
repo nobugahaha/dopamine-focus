@@ -22,17 +22,14 @@ async def main(page: ft.Page):
     page.scroll = "adaptive"
 
     # --- Data Operations ---
+# --- データ操作系（Web公開・ローカルストレージ対応版） ---
     def load_json(filename, default):
-        if os.path.exists(filename):
-            try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except: pass
+        if page.client_storage.contains_key(filename):
+            return page.client_storage.get(filename)
         return default
 
     def save_json(filename, data):
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        page.client_storage.set(filename, data)
 
     # --- UI Components ---
     today_count_text = ft.Text("", size=20, weight="bold", color="green200")
