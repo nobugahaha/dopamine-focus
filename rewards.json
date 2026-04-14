@@ -1,0 +1,12 @@
+[
+  {
+    "name": "ゲーム1回",
+    "rarity": "Rare",
+    "weight": 30
+  },
+  {
+    "name": "好きな動画を1本見る",
+    "rarity": "Legend",
+    "weight": 10
+  }
+]
