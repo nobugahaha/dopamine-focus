@@ -8,20 +8,6 @@ import time
 from datetime import date, timedelta
 
 async def main(page: ft.Page):
-    
-    # --- オーディオ設定 ---
-    alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
-    page.overlay.append(alarm_audio)
-
-    async def finish_logic():
-        timer_text.value = "完成！"
-        timer_text.color = "green400"
-        
-        # 音を鳴らす！
-        alarm_audio.play()
-        
-        # 状態リセット
-    
     # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
@@ -41,6 +27,10 @@ async def main(page: ft.Page):
         
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
+
+    # --- オーディオ設定 ---
+    alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
+    page.overlay.append(alarm_audio)
 
     def safe_update():
         if hasattr(page, "update"):
@@ -141,10 +131,13 @@ async def main(page: ft.Page):
 
     is_timer_running = [False]
 
-    # タイマーが最後まで完了した時の処理（分離してどこからでも呼べるように）
+    # タイマーが最後まで完了した時の処理
     async def finish_logic():
         timer_text.value = "完成！"
         timer_text.color = "green400"
+        
+        # ここで音を鳴らす！
+        alarm_audio.play()
         
         # 状態リセット
         await save_json('timer_state.json', {"running": False, "end_time": 0})
@@ -165,14 +158,12 @@ async def main(page: ft.Page):
         await update_ui()
 
     async def start_timer(e, resume_end_time=None):
-        # 再開の場合は記録された時間、新規は現在時刻＋選択時間で「終了予定時刻」を計算
         if resume_end_time:
             end_time = resume_end_time
         else:
             minutes = float(time_selector.value)
             seconds = int(minutes * 60)
             end_time = time.time() + seconds
-            # スリープ対策として状態を保存
             await save_json('timer_state.json', {"running": True, "end_time": end_time})
         
         is_timer_running[0] = True
@@ -183,7 +174,6 @@ async def main(page: ft.Page):
         timer_text.color = "amber400"
         safe_update()
 
-        # 現在時刻と終了時刻を比較し続ける
         while is_timer_running[0]:
             remaining = int(end_time - time.time())
             if remaining <= 0:
@@ -193,10 +183,8 @@ async def main(page: ft.Page):
             timer_text.value = f"{mins:02d}:{secs:02d}"
             safe_update()
             
-            # 0.5秒おきにチェックすることで、スリープ復帰時にも即座に反応
             await asyncio.sleep(0.5)
 
-        # 中断されずにループを抜けたら（0秒になったら）完了処理へ
         if is_timer_running[0] and remaining <= 0:
             await finish_logic()
 
@@ -280,22 +268,17 @@ async def main(page: ft.Page):
         )
     )
 
-    # アプリ起動時に、もしタイマーが裏で動いたままリロードされていたら自動復帰する処理
     async def check_resume():
         state = await load_json('timer_state.json', {"running": False, "end_time": 0})
         if state and isinstance(state, dict) and state.get("running"):
             now = time.time()
             if state["end_time"] > now:
-                # まだ時間が来ていない場合は再開
                 await start_timer(None, resume_end_time=state["end_time"])
             else:
-                # アプリを閉じている間に時間が過ぎていた場合は、即座に達成とする
                 await finish_logic()
                 
-    # 画面描画の直後に復帰チェックを実行
     asyncio.create_task(check_resume())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port, assets_dir="assets")
-
