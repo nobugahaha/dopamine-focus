@@ -1,5 +1,4 @@
 import flet as ft
-import flet_audio as fta
 import json
 import random
 import os
@@ -14,9 +13,9 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    # --- オーディオ設定（ここが間違っていました、ごめんなさい！） ---
-    alarm_audio = fta.Audio(src="alarm.m4a", autoplay=False)
-    page.overlay.append(alarm_audio) # ❌services ⭕️overlay が大正解です
+    # --- オーディオ設定（安定版の標準機能を使用） ---
+    alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
+    page.overlay.append(alarm_audio)
 
     def safe_update():
         if hasattr(page, "update"):
@@ -162,7 +161,7 @@ async def main(page: ft.Page):
         gacha_button.disabled = True
         timer_text.color = "amber400"
         
-        # ブラウザの「タップ時以外は音を鳴らさない」制限を解除するハック
+        # ブラウザの自動再生ブロック回避ハック
         try:
             alarm_audio.volume = 0
             alarm_audio.play()
