@@ -13,7 +13,7 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    # --- オーディオ設定（安定版の標準機能を使用） ---
+    # --- オーディオ設定（安定版の標準機能） ---
     alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
     page.overlay.append(alarm_audio)
 
@@ -161,7 +161,7 @@ async def main(page: ft.Page):
         gacha_button.disabled = True
         timer_text.color = "amber400"
         
-        # ブラウザの自動再生ブロック回避ハック
+        # スマホブラウザの「自動再生ブロック」を解除するハック
         try:
             alarm_audio.volume = 0
             alarm_audio.play()
