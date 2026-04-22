@@ -1,5 +1,5 @@
 import flet as ft
-import flet_audio as fa  # 新しく分離されたオーディオ専用パッケージ
+import flet_audio as fta
 import json
 import random
 import os
@@ -14,25 +14,9 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    try:
-        page.window.width = 500
-        page.window.height = 950
-    except:
-        pass
-        
-    try:
-        page.window_width = 500
-        page.window_height = 950
-    except:
-        pass
-        
-    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.scroll = ft.ScrollMode.ADAPTIVE
-
-    # --- オーディオ設定（最新版 flet-audio対応） ---
-    alarm_audio = fa.Audio(src="alarm.m4a", autoplay=False)
-    # 最新ルールの変更点：overlayではなくservicesに追加する
-    page.services.append(alarm_audio)
+    # --- オーディオ設定（ここが間違っていました、ごめんなさい！） ---
+    alarm_audio = fta.Audio(src="alarm.m4a", autoplay=False)
+    page.overlay.append(alarm_audio) # ❌services ⭕️overlay が大正解です
 
     def safe_update():
         if hasattr(page, "update"):
@@ -177,6 +161,17 @@ async def main(page: ft.Page):
         time_selector.disabled = True
         gacha_button.disabled = True
         timer_text.color = "amber400"
+        
+        # ブラウザの「タップ時以外は音を鳴らさない」制限を解除するハック
+        try:
+            alarm_audio.volume = 0
+            alarm_audio.play()
+            await asyncio.sleep(0.1)
+            alarm_audio.pause()
+            alarm_audio.volume = 1
+        except:
+            pass
+            
         safe_update()
 
         while is_timer_running[0]:
