@@ -1,4 +1,5 @@
 import flet as ft
+import flet_audio as fa  # 新しく分離されたオーディオ専用パッケージ
 import json
 import random
 import os
@@ -6,14 +7,6 @@ import asyncio
 import inspect
 import time
 from datetime import date, timedelta
-
-# FletのバージョンによるAudio機能の差を吸収する
-try:
-    # 古いバージョンの場合
-    AudioClass = ft.Audio
-except AttributeError:
-    # 最新バージョンの場合（Audioコントロールは削除され、pageの機能になった）
-    pass
 
 async def main(page: ft.Page):
     # --- アプリの基本設定 ---
@@ -36,15 +29,10 @@ async def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
 
-    # --- オーディオ設定（最新版・旧版 両対応） ---
-    # 実際にはここでは設定せず、再生時に処理します
-    alarm_audio_old = None
-    try:
-        if "AudioClass" in globals():
-            alarm_audio_old = AudioClass(src="alarm.m4a", autoplay=False)
-            page.overlay.append(alarm_audio_old)
-    except:
-        pass
+    # --- オーディオ設定（最新版 flet-audio対応） ---
+    alarm_audio = fa.Audio(src="alarm.m4a", autoplay=False)
+    # 最新ルールの変更点：overlayではなくservicesに追加する
+    page.services.append(alarm_audio)
 
     def safe_update():
         if hasattr(page, "update"):
@@ -52,19 +40,6 @@ async def main(page: ft.Page):
                 page.update()
             except Exception:
                 pass
-
-    # 音を鳴らす安全な関数
-    def play_alarm():
-        try:
-            # 最新バージョンのFlet（AudioControlがpageのメソッドになった場合）
-            if hasattr(page, "play_audio"):
-                page.play_audio("alarm.m4a")
-            # 古いバージョンのFlet（overlayに入れたAudioクラスを再生）
-            elif alarm_audio_old and hasattr(alarm_audio_old, "play"):
-                alarm_audio_old.play()
-        except Exception as e:
-            print(f"Audio playback error: {e}")
-            pass
 
     # --- データ操作系 ---
     async def load_json(filename, default):
@@ -163,8 +138,11 @@ async def main(page: ft.Page):
         timer_text.value = "完成！"
         timer_text.color = "green400"
         
-        # 安全に音を鳴らす！
-        play_alarm()
+        # 音を鳴らす！
+        try:
+            alarm_audio.play()
+        except:
+            pass
         
         # 状態リセット
         await save_json('timer_state.json', {"running": False, "end_time": 0})
