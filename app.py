@@ -13,7 +13,7 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    # --- オーディオ設定（安定版の標準機能） ---
+    # --- オーディオ設定 ---
     alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
     page.overlay.append(alarm_audio)
 
@@ -24,29 +24,39 @@ async def main(page: ft.Page):
             except Exception:
                 pass
 
-    # --- データ操作系 ---
+    # --- データ操作系（タイムアウト対策の安全装置を追加） ---
     async def load_json(filename, default):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return default
+        
+        try:
+            has_key = storage.contains_key(filename)
+            if inspect.isawaitable(has_key): has_key = await has_key
+                
+            if has_key:
+                val = storage.get(filename)
+                if inspect.isawaitable(val): val = await val
+                if isinstance(val, str):
+                    try: return json.loads(val)
+                    except: pass
+                return val
+        except Exception:
+            # タイムアウト等で失敗した場合はクラッシュさせずデフォルトを返す
+            pass
             
-        has_key = storage.contains_key(filename)
-        if inspect.isawaitable(has_key): has_key = await has_key
-            
-        if has_key:
-            val = storage.get(filename)
-            if inspect.isawaitable(val): val = await val
-            if isinstance(val, str):
-                try: return json.loads(val)
-                except: pass
-            return val
         return default
 
     async def save_json(filename, data):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return
-        json_str = json.dumps(data, ensure_ascii=False)
-        res = storage.set(filename, json_str)
-        if inspect.isawaitable(res): await res
+        
+        try:
+            json_str = json.dumps(data, ensure_ascii=False)
+            res = storage.set(filename, json_str)
+            if inspect.isawaitable(res): await res
+        except Exception:
+            # 書き込み時の通信エラーも無視する
+            pass
 
     # --- UIパーツ ---
     today_count_text = ft.Text("", size=20, weight="bold", color="green200")
@@ -229,7 +239,11 @@ async def main(page: ft.Page):
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
-    await update_ui()
+    # 起動時のUI更新を安全に実行
+    try:
+        await update_ui()
+    except Exception:
+        pass
 
     # --- レイアウト ---
     page.add(
@@ -268,13 +282,16 @@ async def main(page: ft.Page):
     )
 
     async def check_resume():
-        state = await load_json('timer_state.json', {"running": False, "end_time": 0})
-        if state and isinstance(state, dict) and state.get("running"):
-            now = time.time()
-            if state["end_time"] > now:
-                await start_timer(None, resume_end_time=state["end_time"])
-            else:
-                await finish_logic()
+        try:
+            state = await load_json('timer_state.json', {"running": False, "end_time": 0})
+            if state and isinstance(state, dict) and state.get("running"):
+                now = time.time()
+                if state["end_time"] > now:
+                    await start_timer(None, resume_end_time=state["end_time"])
+                else:
+                    await finish_logic()
+        except Exception:
+            pass
                 
     asyncio.create_task(check_resume())
 
