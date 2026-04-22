@@ -10,7 +10,7 @@ from datetime import date, timedelta
 async def main(page: ft.Page):
     
     # --- オーディオ設定 ---
-    alarm_audio = ft.Audio(src="alarm.mp3", autoplay=False)
+    alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
     page.overlay.append(alarm_audio)
 
     async def finish_logic():
