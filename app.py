@@ -12,6 +12,16 @@ async def main(page: ft.Page):
     # --- オーディオ設定 ---
     alarm_audio = ft.Audio(src="alarm.mp3", autoplay=False)
     page.overlay.append(alarm_audio)
+
+    async def finish_logic():
+        timer_text.value = "完成！"
+        timer_text.color = "green400"
+        
+        # 音を鳴らす！
+        alarm_audio.play()
+        
+        # 状態リセット
+    
     # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
@@ -287,4 +297,5 @@ async def main(page: ft.Page):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port, assets_dir="assets")
+
