@@ -8,6 +8,10 @@ import time
 from datetime import date, timedelta
 
 async def main(page: ft.Page):
+    
+    # --- オーディオ設定 ---
+    alarm_audio = ft.Audio(src="alarm.mp3", autoplay=False)
+    page.overlay.append(alarm_audio)
     # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
