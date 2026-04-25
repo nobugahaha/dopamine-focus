@@ -13,6 +13,10 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
+    # 🌟ここが抜けていました！スクロールと中央揃えを復活🌟
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.scroll = ft.ScrollMode.ADAPTIVE
+    
     def safe_update():
         if hasattr(page, "update"):
             try:
@@ -243,6 +247,7 @@ async def main(page: ft.Page):
                 add_btn
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            # ここでもスクロールを許可
             scroll=ft.ScrollMode.ADAPTIVE
         )
     )
