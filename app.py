@@ -8,10 +8,12 @@ import time
 from datetime import date, timedelta
 
 async def main(page: ft.Page):
+    # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
     page.padding = 20
     
+    # 画面の中央揃えとスクロールを有効化
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
 
@@ -22,8 +24,7 @@ async def main(page: ft.Page):
             except Exception:
                 pass
 
-    # --- アプリのデータを一時記憶する「キャッシュ」 ---
-    # これにより、毎回スマホのストレージに読み込みに行く通信ラグをゼロにします
+    # --- 爆速キャッシュ（ラグ対策） ---
     app_state = {
         "rewards": [{"name": "チョコを1個食べる", "rarity": "Normal", "weight": 60}],
         "logs": {}
@@ -57,7 +58,7 @@ async def main(page: ft.Page):
         except Exception:
             pass
 
-    # 🚀 保存の完了を「待たずに」裏側で勝手にやらせる関数（フリーズ対策の要）
+    # 保存を裏で行い、画面をフリーズさせない仕組み
     def background_save(filename, data):
         asyncio.create_task(save_json(filename, data))
 
@@ -67,6 +68,7 @@ async def main(page: ft.Page):
     rarity_badge = ft.Text("", size=20, weight="bold")
     result_display = ft.Text("集中を始めよう", size=18, italic=True, color="grey400")
     
+    # 50分タイマー復活
     time_selector = ft.Dropdown(
         value="25",
         width=150,
@@ -74,13 +76,13 @@ async def main(page: ft.Page):
             ft.dropdown.Option("0.16", "10秒 (テスト)"),
             ft.dropdown.Option("15", "15分 (ショート)"),
             ft.dropdown.Option("25", "25分 (標準)"),
+            ft.dropdown.Option("50", "50分 (ディープ)"),
         ]
     )
 
     history_table = ft.DataTable(columns=[ft.DataColumn(ft.Text("日付")), ft.DataColumn(ft.Text("達成回数"), numeric=True)], rows=[])
     reward_list_view = ft.Column()
 
-    # --- UI更新関数（通信を一切行わない爆速版） ---
     def update_ui_sync():
         reward_list_view.controls.clear()
         
@@ -96,7 +98,6 @@ async def main(page: ft.Page):
                         result_display.value = "最低1つのご褒美が必要です！"
                         result_display.color = "red400"
                         safe_update()
-                        # エラー表示は3秒後に戻す
                         async def reset_msg():
                             await asyncio.sleep(3)
                             result_display.value = "集中を始めよう"
@@ -134,18 +135,15 @@ async def main(page: ft.Page):
         timer_text.color = "green400"
         is_timer_running[0] = False
         
-        # ログの更新
         today = str(date.today())
         app_state["logs"][today] = app_state["logs"].get(today, 0) + 1
         
-        # UIを即座に更新
         gacha_button.disabled = False
         start_button.disabled = False
         cancel_button.disabled = True
         time_selector.disabled = False
         update_ui_sync()
         
-        # データの保存は裏側に丸投げ（フリーズ回避）
         background_save('timer_state.json', {"running": False, "end_time": 0})
         background_save('logs.json', app_state["logs"])
 
@@ -156,8 +154,8 @@ async def main(page: ft.Page):
         time_selector.disabled = True
         gacha_button.disabled = True
         timer_text.color = "amber400"
-        safe_update() # 押した瞬間に画面を切り替え
-        
+        safe_update() 
+
         if resume_end_time:
             end_time = resume_end_time
         else:
@@ -174,6 +172,7 @@ async def main(page: ft.Page):
             mins, secs = divmod(remaining, 60)
             new_display = f"{mins:02d}:{secs:02d}"
             
+            # 文字が変わった時だけ更新してカクつき防止
             if timer_text.value != new_display:
                 timer_text.value = new_display
                 safe_update()
@@ -223,7 +222,6 @@ async def main(page: ft.Page):
             w = 60 if rarity_dropdown.value == "Normal" else 30 if rarity_dropdown.value == "Rare" else 10
             app_state["rewards"].append({"name": new_reward, "rarity": rarity_dropdown.value, "weight": w})
             
-            # UIを即座に更新してから、裏で保存
             update_ui_sync()
             background_save('rewards.json', app_state["rewards"])
 
@@ -264,14 +262,12 @@ async def main(page: ft.Page):
         )
     )
 
-    # アプリ起動時のデータ初期読み込み（ここだけは唯一通信を待ちます）
     async def initialize_app():
         r = await load_json('rewards.json', None)
         if r is not None: app_state["rewards"] = r
         app_state["logs"] = await load_json('logs.json', {})
         update_ui_sync()
         
-        # 復帰チェック
         state = await load_json('timer_state.json', {"running": False, "end_time": 0})
         if state and isinstance(state, dict) and state.get("running"):
             now = time.time()
