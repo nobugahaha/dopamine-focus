@@ -13,10 +13,9 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    # 🌟ここが抜けていました！スクロールと中央揃えを復活🌟
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
-    
+
     def safe_update():
         if hasattr(page, "update"):
             try:
@@ -126,6 +125,7 @@ async def main(page: ft.Page):
     async def finish_logic():
         timer_text.value = "完成！"
         timer_text.color = "green400"
+        safe_update() # 完了時も即座に画面更新
         
         await save_json('timer_state.json', {"running": False, "end_time": 0})
         is_timer_running[0] = False
@@ -143,6 +143,16 @@ async def main(page: ft.Page):
         await update_ui()
 
     async def start_timer(e, resume_end_time=None):
+        # 【高速化1】通信が発生する前に、まずは画面の見た目を即座に切り替える！
+        is_timer_running[0] = True
+        start_button.disabled = True
+        cancel_button.disabled = False
+        time_selector.disabled = True
+        gacha_button.disabled = True
+        timer_text.color = "amber400"
+        safe_update() # ←ここですぐにボタンが反応するようになる
+        
+        # その後で、裏側の保存処理などをゆっくり行う
         if resume_end_time:
             end_time = resume_end_time
         else:
@@ -150,39 +160,37 @@ async def main(page: ft.Page):
             seconds = int(minutes * 60)
             end_time = time.time() + seconds
             await save_json('timer_state.json', {"running": True, "end_time": end_time})
-        
-        is_timer_running[0] = True
-        start_button.disabled = True
-        cancel_button.disabled = False
-        time_selector.disabled = True
-        gacha_button.disabled = True
-        timer_text.color = "amber400"
-            
-        safe_update()
 
+        # 【高速化2】表示する文字が「実際に変わった時だけ」通信を行う
         while is_timer_running[0]:
             remaining = int(end_time - time.time())
             if remaining <= 0:
                 break
             
             mins, secs = divmod(remaining, 60)
-            timer_text.value = f"{mins:02d}:{secs:02d}"
-            safe_update()
+            new_display = f"{mins:02d}:{secs:02d}"
             
-            await asyncio.sleep(0.5)
+            # 画面の文字と新しい文字が違う時だけ更新（無駄な通信をカットしてカクつき防止）
+            if timer_text.value != new_display:
+                timer_text.value = new_display
+                safe_update()
+            
+            # チェック自体は細かく(0.1秒)行い、ズレをなくす
+            await asyncio.sleep(0.1)
 
         if is_timer_running[0] and remaining <= 0:
             await finish_logic()
 
     async def cancel_timer(e):
         is_timer_running[0] = False
-        await save_json('timer_state.json', {"running": False, "end_time": 0})
         timer_text.value = "00:00"
         timer_text.color = "amber400"
         start_button.disabled = False
         cancel_button.disabled = True
         time_selector.disabled = False
-        safe_update()
+        safe_update() # すぐに画面を戻す
+        
+        await save_json('timer_state.json', {"running": False, "end_time": 0})
 
     start_button.on_click = start_timer
     cancel_button.on_click = cancel_timer
@@ -207,11 +215,15 @@ async def main(page: ft.Page):
 
     async def add_reward_click(e):
         if new_reward_input.value:
+            # 追加ボタンを押した時も、まずは入力欄を空にして即座に反応させる
+            new_reward = new_reward_input.value
+            new_reward_input.value = ""
+            safe_update()
+            
             rewards = await load_json('rewards.json', [])
             w = 60 if rarity_dropdown.value == "Normal" else 30 if rarity_dropdown.value == "Rare" else 10
-            rewards.append({"name": new_reward_input.value, "rarity": rarity_dropdown.value, "weight": w})
+            rewards.append({"name": new_reward, "rarity": rarity_dropdown.value, "weight": w})
             await save_json('rewards.json', rewards)
-            new_reward_input.value = ""
             await update_ui()
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
@@ -247,7 +259,6 @@ async def main(page: ft.Page):
                 add_btn
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            # ここでもスクロールを許可
             scroll=ft.ScrollMode.ADAPTIVE
         )
     )
