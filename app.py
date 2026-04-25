@@ -24,7 +24,7 @@ async def main(page: ft.Page):
             except Exception:
                 pass
 
-    # --- データ操作系（タイムアウト対策の安全装置を追加） ---
+    # --- データ操作系 ---
     async def load_json(filename, default):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return default
@@ -41,7 +41,6 @@ async def main(page: ft.Page):
                     except: pass
                 return val
         except Exception:
-            # タイムアウト等で失敗した場合はクラッシュさせずデフォルトを返す
             pass
             
         return default
@@ -55,7 +54,6 @@ async def main(page: ft.Page):
             res = storage.set(filename, json_str)
             if inspect.isawaitable(res): await res
         except Exception:
-            # 書き込み時の通信エラーも無視する
             pass
 
     # --- UIパーツ ---
@@ -126,28 +124,23 @@ async def main(page: ft.Page):
 
     is_timer_running = [False]
 
-    # タイマーが最後まで完了した時の処理
     async def finish_logic():
         timer_text.value = "完成！"
         timer_text.color = "green400"
         
-        # 音を鳴らす！
         try:
             alarm_audio.play()
         except:
             pass
         
-        # 状態リセット
         await save_json('timer_state.json', {"running": False, "end_time": 0})
         is_timer_running[0] = False
         
-        # ログ保存
         logs = await load_json('logs.json', {})
         today = str(date.today())
         logs[today] = logs.get(today, 0) + 1
         await save_json('logs.json', logs)
         
-        # ボタンの切り替え
         gacha_button.disabled = False
         start_button.disabled = False
         cancel_button.disabled = True
@@ -171,13 +164,14 @@ async def main(page: ft.Page):
         gacha_button.disabled = True
         timer_text.color = "amber400"
         
-        # スマホブラウザの「自動再生ブロック」を解除するハック
         try:
             alarm_audio.volume = 0
+            alarm_audio.update()
             alarm_audio.play()
             await asyncio.sleep(0.1)
             alarm_audio.pause()
             alarm_audio.volume = 1
+            alarm_audio.update()
         except:
             pass
             
@@ -239,13 +233,7 @@ async def main(page: ft.Page):
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
-    # 起動時のUI更新を安全に実行
-    try:
-        await update_ui()
-    except Exception:
-        pass
-
-    # --- レイアウト ---
+    # --- 修正箇所：レイアウト（UI配置）を先に行う ---
     page.add(
         ft.Column(
             [
@@ -280,6 +268,12 @@ async def main(page: ft.Page):
             scroll=ft.ScrollMode.ADAPTIVE
         )
     )
+
+    # --- 修正箇所：画面が完成してからデータを読み込む ---
+    try:
+        await update_ui()
+    except Exception:
+        pass
 
     async def check_resume():
         try:
