@@ -13,6 +13,18 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
+    try:
+        page.window.width = 500
+        page.window.height = 950
+    except:
+        pass
+        
+    try:
+        page.window_width = 500
+        page.window_height = 950
+    except:
+        pass
+        
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.scroll = ft.ScrollMode.ADAPTIVE
 
@@ -27,33 +39,25 @@ async def main(page: ft.Page):
     async def load_json(filename, default):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return default
-        
-        try:
-            has_key = storage.contains_key(filename)
-            if inspect.isawaitable(has_key): has_key = await has_key
-                
-            if has_key:
-                val = storage.get(filename)
-                if inspect.isawaitable(val): val = await val
-                if isinstance(val, str):
-                    try: return json.loads(val)
-                    except: pass
-                return val
-        except Exception:
-            pass
             
+        has_key = storage.contains_key(filename)
+        if inspect.isawaitable(has_key): has_key = await has_key
+            
+        if has_key:
+            val = storage.get(filename)
+            if inspect.isawaitable(val): val = await val
+            if isinstance(val, str):
+                try: return json.loads(val)
+                except: pass
+            return val
         return default
 
     async def save_json(filename, data):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return
-        
-        try:
-            json_str = json.dumps(data, ensure_ascii=False)
-            res = storage.set(filename, json_str)
-            if inspect.isawaitable(res): await res
-        except Exception:
-            pass
+        json_str = json.dumps(data, ensure_ascii=False)
+        res = storage.set(filename, json_str)
+        if inspect.isawaitable(res): await res
 
     # --- UIパーツ ---
     today_count_text = ft.Text("", size=20, weight="bold", color="green200")
@@ -68,6 +72,7 @@ async def main(page: ft.Page):
             ft.dropdown.Option("0.16", "10秒 (テスト)"),
             ft.dropdown.Option("15", "15分 (ショート)"),
             ft.dropdown.Option("25", "25分 (標準)"),
+            ft.dropdown.Option("50", "50分 (ディープ)"),
         ]
     )
 
@@ -122,19 +127,22 @@ async def main(page: ft.Page):
 
     is_timer_running = [False]
 
+    # タイマーが最後まで完了した時の処理（分離してどこからでも呼べるように）
     async def finish_logic():
         timer_text.value = "完成！"
         timer_text.color = "green400"
-        safe_update() # 完了時も即座に画面更新
         
+        # 状態リセット
         await save_json('timer_state.json', {"running": False, "end_time": 0})
         is_timer_running[0] = False
         
+        # ログ保存
         logs = await load_json('logs.json', {})
         today = str(date.today())
         logs[today] = logs.get(today, 0) + 1
         await save_json('logs.json', logs)
         
+        # ボタンの切り替え
         gacha_button.disabled = False
         start_button.disabled = False
         cancel_button.disabled = True
@@ -143,54 +151,50 @@ async def main(page: ft.Page):
         await update_ui()
 
     async def start_timer(e, resume_end_time=None):
-        # 【高速化1】通信が発生する前に、まずは画面の見た目を即座に切り替える！
-        is_timer_running[0] = True
-        start_button.disabled = True
-        cancel_button.disabled = False
-        time_selector.disabled = True
-        gacha_button.disabled = True
-        timer_text.color = "amber400"
-        safe_update() # ←ここですぐにボタンが反応するようになる
-        
-        # その後で、裏側の保存処理などをゆっくり行う
+        # 再開の場合は記録された時間、新規は現在時刻＋選択時間で「終了予定時刻」を計算
         if resume_end_time:
             end_time = resume_end_time
         else:
             minutes = float(time_selector.value)
             seconds = int(minutes * 60)
             end_time = time.time() + seconds
+            # スリープ対策として状態を保存
             await save_json('timer_state.json', {"running": True, "end_time": end_time})
+        
+        is_timer_running[0] = True
+        start_button.disabled = True
+        cancel_button.disabled = False
+        time_selector.disabled = True
+        gacha_button.disabled = True
+        timer_text.color = "amber400"
+        safe_update()
 
-        # 【高速化2】表示する文字が「実際に変わった時だけ」通信を行う
+        # 現在時刻と終了時刻を比較し続ける
         while is_timer_running[0]:
             remaining = int(end_time - time.time())
             if remaining <= 0:
                 break
             
             mins, secs = divmod(remaining, 60)
-            new_display = f"{mins:02d}:{secs:02d}"
+            timer_text.value = f"{mins:02d}:{secs:02d}"
+            safe_update()
             
-            # 画面の文字と新しい文字が違う時だけ更新（無駄な通信をカットしてカクつき防止）
-            if timer_text.value != new_display:
-                timer_text.value = new_display
-                safe_update()
-            
-            # チェック自体は細かく(0.1秒)行い、ズレをなくす
-            await asyncio.sleep(0.1)
+            # 0.5秒おきにチェックすることで、スリープ復帰時にも即座に反応
+            await asyncio.sleep(0.5)
 
+        # 中断されずにループを抜けたら（0秒になったら）完了処理へ
         if is_timer_running[0] and remaining <= 0:
             await finish_logic()
 
     async def cancel_timer(e):
         is_timer_running[0] = False
+        await save_json('timer_state.json', {"running": False, "end_time": 0})
         timer_text.value = "00:00"
         timer_text.color = "amber400"
         start_button.disabled = False
         cancel_button.disabled = True
         time_selector.disabled = False
-        safe_update() # すぐに画面を戻す
-        
-        await save_json('timer_state.json', {"running": False, "end_time": 0})
+        safe_update()
 
     start_button.on_click = start_timer
     cancel_button.on_click = cancel_timer
@@ -215,19 +219,18 @@ async def main(page: ft.Page):
 
     async def add_reward_click(e):
         if new_reward_input.value:
-            # 追加ボタンを押した時も、まずは入力欄を空にして即座に反応させる
-            new_reward = new_reward_input.value
-            new_reward_input.value = ""
-            safe_update()
-            
             rewards = await load_json('rewards.json', [])
             w = 60 if rarity_dropdown.value == "Normal" else 30 if rarity_dropdown.value == "Rare" else 10
-            rewards.append({"name": new_reward, "rarity": rarity_dropdown.value, "weight": w})
+            rewards.append({"name": new_reward_input.value, "rarity": rarity_dropdown.value, "weight": w})
             await save_json('rewards.json', rewards)
+            new_reward_input.value = ""
             await update_ui()
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
+    await update_ui()
+
+    # --- レイアウト ---
     page.add(
         ft.Column(
             [
@@ -263,25 +266,21 @@ async def main(page: ft.Page):
         )
     )
 
-    try:
-        await update_ui()
-    except Exception:
-        pass
-
+    # アプリ起動時に、もしタイマーが裏で動いたままリロードされていたら自動復帰する処理
     async def check_resume():
-        try:
-            state = await load_json('timer_state.json', {"running": False, "end_time": 0})
-            if state and isinstance(state, dict) and state.get("running"):
-                now = time.time()
-                if state["end_time"] > now:
-                    await start_timer(None, resume_end_time=state["end_time"])
-                else:
-                    await finish_logic()
-        except Exception:
-            pass
+        state = await load_json('timer_state.json', {"running": False, "end_time": 0})
+        if state and isinstance(state, dict) and state.get("running"):
+            now = time.time()
+            if state["end_time"] > now:
+                # まだ時間が来ていない場合は再開
+                await start_timer(None, resume_end_time=state["end_time"])
+            else:
+                # アプリを閉じている間に時間が過ぎていた場合は、即座に達成とする
+                await finish_logic()
                 
+    # 画面描画の直後に復帰チェックを実行
     asyncio.create_task(check_resume())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port, assets_dir="assets")
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
