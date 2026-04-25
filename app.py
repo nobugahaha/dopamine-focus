@@ -8,7 +8,6 @@ import time
 from datetime import date, timedelta
 
 async def main(page: ft.Page):
-    # --- アプリの基本設定 ---
     page.title = "DOPAMINE FOCUS"
     page.theme_mode = "dark"
     page.padding = 20
@@ -23,15 +22,20 @@ async def main(page: ft.Page):
             except Exception:
                 pass
 
+    # --- アプリのデータを一時記憶する「キャッシュ」 ---
+    # これにより、毎回スマホのストレージに読み込みに行く通信ラグをゼロにします
+    app_state = {
+        "rewards": [{"name": "チョコを1個食べる", "rarity": "Normal", "weight": 60}],
+        "logs": {}
+    }
+
     # --- データ操作系 ---
     async def load_json(filename, default):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return default
-        
         try:
             has_key = storage.contains_key(filename)
             if inspect.isawaitable(has_key): has_key = await has_key
-                
             if has_key:
                 val = storage.get(filename)
                 if inspect.isawaitable(val): val = await val
@@ -41,19 +45,21 @@ async def main(page: ft.Page):
                 return val
         except Exception:
             pass
-            
         return default
 
     async def save_json(filename, data):
         storage = getattr(page, "shared_preferences", getattr(page, "client_storage", None))
         if storage is None: return
-        
         try:
             json_str = json.dumps(data, ensure_ascii=False)
             res = storage.set(filename, json_str)
             if inspect.isawaitable(res): await res
         except Exception:
             pass
+
+    # 🚀 保存の完了を「待たずに」裏側で勝手にやらせる関数（フリーズ対策の要）
+    def background_save(filename, data):
+        asyncio.create_task(save_json(filename, data))
 
     # --- UIパーツ ---
     today_count_text = ft.Text("", size=20, weight="bold", color="green200")
@@ -74,27 +80,29 @@ async def main(page: ft.Page):
     history_table = ft.DataTable(columns=[ft.DataColumn(ft.Text("日付")), ft.DataColumn(ft.Text("達成回数"), numeric=True)], rows=[])
     reward_list_view = ft.Column()
 
-    async def update_ui():
+    # --- UI更新関数（通信を一切行わない爆速版） ---
+    def update_ui_sync():
         reward_list_view.controls.clear()
-        rewards = await load_json('rewards.json', [{"name": "チョコを1個食べる", "rarity": "Normal", "weight": 60}])
         
-        for i, r in enumerate(rewards):
+        for i, r in enumerate(app_state["rewards"]):
             dot_color = "amber" if r['rarity'] == "Legend" else "blue" if r['rarity'] == "Rare" else "white"
             def make_delete_action(index):
-                async def delete_item(e):
-                    current_rewards = await load_json('rewards.json', [])
-                    if len(current_rewards) > 1:
-                        current_rewards.pop(index)
-                        await save_json('rewards.json', current_rewards)
-                        await update_ui()
+                def delete_item(e):
+                    if len(app_state["rewards"]) > 1:
+                        app_state["rewards"].pop(index)
+                        background_save('rewards.json', app_state["rewards"])
+                        update_ui_sync()
                     else:
                         result_display.value = "最低1つのご褒美が必要です！"
                         result_display.color = "red400"
                         safe_update()
-                        await asyncio.sleep(2)
-                        result_display.value = "集中を始めよう"
-                        result_display.color = "grey400"
-                        safe_update()
+                        # エラー表示は3秒後に戻す
+                        async def reset_msg():
+                            await asyncio.sleep(3)
+                            result_display.value = "集中を始めよう"
+                            result_display.color = "grey400"
+                            safe_update()
+                        asyncio.create_task(reset_msg())
                 return delete_item
 
             row = ft.Row(
@@ -106,14 +114,13 @@ async def main(page: ft.Page):
             )
             reward_list_view.controls.append(row)
         
-        logs = await load_json('logs.json', {})
         today = str(date.today())
-        today_count_text.value = f"今日の達成: {logs.get(today, 0)} 回"
+        today_count_text.value = f"今日の達成: {app_state['logs'].get(today, 0)} 回"
         
         history_table.rows.clear()
         for i in range(5):
             day = str(date.today() - timedelta(days=i))
-            history_table.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text(day)), ft.DataCell(ft.Text(str(logs.get(day, 0))))]))
+            history_table.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text(day)), ft.DataCell(ft.Text(str(app_state['logs'].get(day, 0))))]))
         safe_update()
 
     gacha_button = ft.ElevatedButton("ご褒美を受け取る！", icon="CARD_GIFT_CARD", disabled=True, width=250, height=50)
@@ -122,46 +129,43 @@ async def main(page: ft.Page):
 
     is_timer_running = [False]
 
-    async def finish_logic():
+    def finish_logic():
         timer_text.value = "完成！"
         timer_text.color = "green400"
-        safe_update() # 完了時も即座に画面更新
-        
-        await save_json('timer_state.json', {"running": False, "end_time": 0})
         is_timer_running[0] = False
         
-        logs = await load_json('logs.json', {})
+        # ログの更新
         today = str(date.today())
-        logs[today] = logs.get(today, 0) + 1
-        await save_json('logs.json', logs)
+        app_state["logs"][today] = app_state["logs"].get(today, 0) + 1
         
+        # UIを即座に更新
         gacha_button.disabled = False
         start_button.disabled = False
         cancel_button.disabled = True
         time_selector.disabled = False
+        update_ui_sync()
         
-        await update_ui()
+        # データの保存は裏側に丸投げ（フリーズ回避）
+        background_save('timer_state.json', {"running": False, "end_time": 0})
+        background_save('logs.json', app_state["logs"])
 
     async def start_timer(e, resume_end_time=None):
-        # 【高速化1】通信が発生する前に、まずは画面の見た目を即座に切り替える！
         is_timer_running[0] = True
         start_button.disabled = True
         cancel_button.disabled = False
         time_selector.disabled = True
         gacha_button.disabled = True
         timer_text.color = "amber400"
-        safe_update() # ←ここですぐにボタンが反応するようになる
+        safe_update() # 押した瞬間に画面を切り替え
         
-        # その後で、裏側の保存処理などをゆっくり行う
         if resume_end_time:
             end_time = resume_end_time
         else:
             minutes = float(time_selector.value)
             seconds = int(minutes * 60)
             end_time = time.time() + seconds
-            await save_json('timer_state.json', {"running": True, "end_time": end_time})
+            background_save('timer_state.json', {"running": True, "end_time": end_time})
 
-        # 【高速化2】表示する文字が「実際に変わった時だけ」通信を行う
         while is_timer_running[0]:
             remaining = int(end_time - time.time())
             if remaining <= 0:
@@ -170,33 +174,31 @@ async def main(page: ft.Page):
             mins, secs = divmod(remaining, 60)
             new_display = f"{mins:02d}:{secs:02d}"
             
-            # 画面の文字と新しい文字が違う時だけ更新（無駄な通信をカットしてカクつき防止）
             if timer_text.value != new_display:
                 timer_text.value = new_display
                 safe_update()
             
-            # チェック自体は細かく(0.1秒)行い、ズレをなくす
             await asyncio.sleep(0.1)
 
         if is_timer_running[0] and remaining <= 0:
-            await finish_logic()
+            finish_logic()
 
-    async def cancel_timer(e):
+    def cancel_timer(e):
         is_timer_running[0] = False
         timer_text.value = "00:00"
         timer_text.color = "amber400"
         start_button.disabled = False
         cancel_button.disabled = True
         time_selector.disabled = False
-        safe_update() # すぐに画面を戻す
+        safe_update()
         
-        await save_json('timer_state.json', {"running": False, "end_time": 0})
+        background_save('timer_state.json', {"running": False, "end_time": 0})
 
     start_button.on_click = start_timer
     cancel_button.on_click = cancel_timer
 
-    async def draw_gacha(e):
-        rewards = await load_json('rewards.json', [])
+    def draw_gacha(e):
+        rewards = app_state["rewards"]
         if not rewards: return
         result = random.choices(population=rewards, weights=[r['weight'] for r in rewards], k=1)[0]
         rarity_badge.value = f"【{result['rarity']}】"
@@ -213,18 +215,17 @@ async def main(page: ft.Page):
     new_reward_input = ft.TextField(label="ご褒美の内容", expand=True)
     rarity_dropdown = ft.Dropdown(width=110, value="Normal", options=[ft.dropdown.Option("Normal"), ft.dropdown.Option("Rare"), ft.dropdown.Option("Legend")])
 
-    async def add_reward_click(e):
+    def add_reward_click(e):
         if new_reward_input.value:
-            # 追加ボタンを押した時も、まずは入力欄を空にして即座に反応させる
             new_reward = new_reward_input.value
             new_reward_input.value = ""
-            safe_update()
             
-            rewards = await load_json('rewards.json', [])
             w = 60 if rarity_dropdown.value == "Normal" else 30 if rarity_dropdown.value == "Rare" else 10
-            rewards.append({"name": new_reward, "rarity": rarity_dropdown.value, "weight": w})
-            await save_json('rewards.json', rewards)
-            await update_ui()
+            app_state["rewards"].append({"name": new_reward, "rarity": rarity_dropdown.value, "weight": w})
+            
+            # UIを即座に更新してから、裏で保存
+            update_ui_sync()
+            background_save('rewards.json', app_state["rewards"])
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
@@ -263,24 +264,23 @@ async def main(page: ft.Page):
         )
     )
 
-    try:
-        await update_ui()
-    except Exception:
-        pass
+    # アプリ起動時のデータ初期読み込み（ここだけは唯一通信を待ちます）
+    async def initialize_app():
+        r = await load_json('rewards.json', None)
+        if r is not None: app_state["rewards"] = r
+        app_state["logs"] = await load_json('logs.json', {})
+        update_ui_sync()
+        
+        # 復帰チェック
+        state = await load_json('timer_state.json', {"running": False, "end_time": 0})
+        if state and isinstance(state, dict) and state.get("running"):
+            now = time.time()
+            if state["end_time"] > now:
+                await start_timer(None, resume_end_time=state["end_time"])
+            else:
+                finish_logic()
 
-    async def check_resume():
-        try:
-            state = await load_json('timer_state.json', {"running": False, "end_time": 0})
-            if state and isinstance(state, dict) and state.get("running"):
-                now = time.time()
-                if state["end_time"] > now:
-                    await start_timer(None, resume_end_time=state["end_time"])
-                else:
-                    await finish_logic()
-        except Exception:
-            pass
-                
-    asyncio.create_task(check_resume())
+    asyncio.create_task(initialize_app())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
