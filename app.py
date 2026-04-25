@@ -13,10 +13,6 @@ async def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 20
     
-    # --- オーディオ設定 ---
-    alarm_audio = ft.Audio(src="alarm.m4a", autoplay=False)
-    page.overlay.append(alarm_audio)
-
     def safe_update():
         if hasattr(page, "update"):
             try:
@@ -69,7 +65,6 @@ async def main(page: ft.Page):
             ft.dropdown.Option("0.16", "10秒 (テスト)"),
             ft.dropdown.Option("15", "15分 (ショート)"),
             ft.dropdown.Option("25", "25分 (標準)"),
-            ft.dropdown.Option("50", "50分 (ディープ)"),
         ]
     )
 
@@ -128,11 +123,6 @@ async def main(page: ft.Page):
         timer_text.value = "完成！"
         timer_text.color = "green400"
         
-        try:
-            alarm_audio.play()
-        except:
-            pass
-        
         await save_json('timer_state.json', {"running": False, "end_time": 0})
         is_timer_running[0] = False
         
@@ -163,17 +153,6 @@ async def main(page: ft.Page):
         time_selector.disabled = True
         gacha_button.disabled = True
         timer_text.color = "amber400"
-        
-        try:
-            alarm_audio.volume = 0
-            alarm_audio.update()
-            alarm_audio.play()
-            await asyncio.sleep(0.1)
-            alarm_audio.pause()
-            alarm_audio.volume = 1
-            alarm_audio.update()
-        except:
-            pass
             
         safe_update()
 
@@ -233,7 +212,6 @@ async def main(page: ft.Page):
 
     add_btn = ft.ElevatedButton("追加", icon="ADD", on_click=add_reward_click)
 
-    # --- 修正箇所：レイアウト（UI配置）を先に行う ---
     page.add(
         ft.Column(
             [
@@ -269,7 +247,6 @@ async def main(page: ft.Page):
         )
     )
 
-    # --- 修正箇所：画面が完成してからデータを読み込む ---
     try:
         await update_ui()
     except Exception:
